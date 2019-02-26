@@ -1,28 +1,82 @@
+use header::Tag;
+
 #[derive(Debug)]
-#[repr(C)]
 pub struct MemoryMapTag {
-    typ: u32,
-    size: u32,
-    entry_size: u32,
-    entry_version: u32,
-    first_area: MemoryArea,
+    inner: *const MemoryMapTagInner,
+    entries: usize,
 }
 
-impl MemoryMapTag {
-    pub fn memory_areas(&self) -> MemoryAreaIter {
-        let self_ptr = self as *const MemoryMapTag;
-        let start_area = (&self.first_area) as *const MemoryArea;
-        MemoryAreaIter {
-            current_area: start_area as u64,
-            last_area: (self_ptr as u64 + (self.size - self.entry_size) as u64),
-            entry_size: self.entry_size,
-        }
+pub fn memory_map_tag(tag: &Tag) -> MemoryMapTag {
+    assert_eq!(6, tag.typ);
+    let inner = unsafe { (tag as *const _).offset(1) } as *const _;
+    MemoryMapTag {
+        inner: inner,
+        entries: (tag.size / unsafe { &*inner }.entry_size) as usize,
     }
 }
 
 #[derive(Debug)]
-#[repr(C)]
+#[repr(C, packed)]
+pub struct MemoryMapTagInner {
+    entry_size: u32,
+    entry_version: u32,
+}
+
+impl MemoryMapTag {
+    pub fn memory_areas(&self) -> MemoryAreaIter {
+        MemoryAreaIter {
+            current_area: self.first_area(),
+            remaining_entries: self.entries,
+            entry_size: self.get().entry_size,
+        }
+    }
+
+    fn first_area(&self) -> *const u8 {
+        (unsafe { self.inner.offset(1) }) as *const _
+    }
+
+    fn get(&self) -> &MemoryMapTagInner {
+        unsafe { &*self.inner }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MemoryAreaIter {
+    current_area: *const u8,
+    remaining_entries: usize,
+    entry_size: u32,
+}
+
+impl Iterator for MemoryAreaIter {
+    type Item = MemoryArea;
+
+    fn next(&mut self) -> Option<MemoryArea> {
+        while self.remaining_entries != 0 {
+            let area = MemoryArea {
+                inner: self.current_area,
+                entry_size: self.entry_size,
+            };
+
+            self.current_area = unsafe { self.current_area.offset(self.entry_size as isize) };
+            self.remaining_entries -= 1;
+
+            if area.get().typ == 1 {
+                return Some(area);
+            }
+        }
+        None
+    }
+}
+
+#[derive(Debug)]
 pub struct MemoryArea {
+    inner: *const u8,
+    entry_size: u32,
+}
+
+#[derive(Debug)]
+#[repr(C, packed)]
+pub struct MemoryAreaInner {
     base_addr: u64,
     length: u64,
     typ: u32,
@@ -31,36 +85,19 @@ pub struct MemoryArea {
 
 impl MemoryArea {
     pub fn start_address(&self) -> u64 {
-        self.base_addr
+        self.get().base_addr
     }
 
     pub fn end_address(&self) -> u64 {
-        (self.base_addr + self.length)
+        (self.get().base_addr + self.get().length)
     }
 
     pub fn size(&self) -> u64 {
-        self.length
+        self.get().length
     }
-}
 
-#[derive(Clone, Debug)]
-pub struct MemoryAreaIter {
-    current_area: u64,
-    last_area: u64,
-    entry_size: u32,
-}
-
-impl Iterator for MemoryAreaIter {
-    type Item = &'static MemoryArea;
-    fn next(&mut self) -> Option<&'static MemoryArea> {
-        if self.current_area > self.last_area {
-            None
-        } else {
-            let area = unsafe{&*(self.current_area as *const MemoryArea)};
-            self.current_area = self.current_area + (self.entry_size as u64);
-            if area.typ == 1 {
-                Some(area)
-            } else {self.next()}
-        }
+    fn get(&self) -> &MemoryAreaInner {
+        assert_eq!(24, self.entry_size);
+        unsafe { &*(self.inner as *const MemoryAreaInner) }
     }
 }
