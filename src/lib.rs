@@ -76,20 +76,20 @@ impl BootInformation {
         })
     }
 
-    pub fn memory_map_tag(&self) -> Option<&'static MemoryMapTag> {
-        self.get_tag(6).map(|tag| unsafe { &*(tag as *const Tag as *const MemoryMapTag) })
+    pub fn memory_map_tag(&self) -> Option<MemoryMapTag> {
+        self.get_tag(6).map(|tag| memory_map::memory_map_tag(tag))
     }
 
     pub fn module_tags(&self) -> ModuleIter {
         module::module_iter(self.tags())
     }
 
-    pub fn boot_loader_name_tag(&self) -> Option<&'static BootLoaderNameTag> {
-        self.get_tag(2).map(|tag| unsafe { &*(tag as *const Tag as *const BootLoaderNameTag) })
+    pub fn boot_loader_name_tag(&self) -> Option<BootLoaderNameTag> {
+        self.get_tag(2).map(|tag| boot_loader_name::boot_loader_name_tag(tag))
     }
 
-    pub fn command_line_tag(&self) -> Option<&'static CommandLineTag> {
-        self.get_tag(1).map(|tag| unsafe { &*(tag as *const Tag as *const CommandLineTag) })
+    pub fn command_line_tag(&self) -> Option<CommandLineTag> {
+        self.get_tag(1).map(|tag| command_line::command_line_tag(tag))
     }
 
     pub fn framebuffer_tag(&self) -> Option<FramebufferTag<'static>> {
